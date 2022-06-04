@@ -4,34 +4,52 @@
 
     // {$or: [{ _id: user ? user._id : params.id }, { username: params.username }],}
 
-const { User, Auth } = require('../models')
+const { User } = require('../models')
+const { AuthenticationError } = require('apollo-server-express')
+const { signToken } = require('../utils/auth')
+
 
 const resolvers = {
     Query: {
         // find one user
-        me: async (parent, args) => {
-            if(args.userId) {
-                return await User.findById(args.userId)
-            } else {
-                return await User.findOne(args.username)
+        me: async (parent, args, context) => {
+            if (context.user) {
+              return User.findOne({ _id: context.user._id });
             }
-        }
+            throw new AuthenticationError('You need to be logged in!');
+          },
     },
 
     Mutation: {
         login: async (parent, args) => {
+            const user = await User.findOne({ $or: [{ _id: args._id }, { username: args.username }],
+            });
 
-            return await Auth.find()
+            if (!user) {
+                throw new AuthenticationError('Cannot find a user with this id!')
+            }
+
+            const correctPw = await user.isCorrectPassword(args.password);
+
+            if (!correctPw) {
+                throw new AuthenticationError('Wrong password!')
+            }
+
+            const token = signToken(user);
+            return {token, user}
         },
 
         addUser: async (parent, args) => {
             // Accepts a username, email, and password as parameters
-
-            return await Auth.create({
+            const user = await User.create({
                 username:args.username,
                 email:args.email,
                 password:args.password
             })
+
+            const token = signToken(user)
+
+            return { user, token }
         },
 
         saveBook: async (parent, {userId, input}) => {
